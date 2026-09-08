@@ -282,6 +282,7 @@
     <div class="top-controls">
       <span class="sync-pill"><span class="sync-dot"></span>Saved on this device</span>
       <span class="window-setting">Alert window <input type="number" id="alertWindow" min="1" max="60" value="14" /> days</span>
+      <button class="btn-ghost" id="exportBtn">⬇ Export to Excel</button>
       <button class="btn-primary" id="openAdd">+ Log delivery</button>
     </div>
   </header>
@@ -824,6 +825,67 @@
   });
 
   attachDeliveryHandlers();
+
+  // ---------- export to Excel ----------
+  let xlsxScriptPromise = null;
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve();
+    if (xlsxScriptPromise) return xlsxScriptPromise;
+    xlsxScriptPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload = resolve;
+      s.onerror = () => { xlsxScriptPromise = null; reject(new Error('xlsx failed to load')); };
+      document.head.appendChild(s);
+    });
+    return xlsxScriptPromise;
+  }
+
+  function exportRows() {
+    return deliveries.map(d => {
+      const active = d.status === 'active';
+      return {
+        Product: d.product,
+        Barcode: d.barcode || '',
+        Category: d.category || '',
+        Quantity: d.qty,
+        'Delivered date': d.deliveredDate,
+        'Expiry date': d.expiryDate,
+        'Date type': d.dateType === 'use-by' ? 'Use by' : 'Best before',
+        'Days left today': active ? daysLeft(d) : '',
+        Status: active ? tierLabel(tierFor(daysLeft(d))) : (d.status === 'cleared' ? 'Cleared' : 'Discarded'),
+        'Resolved on': d.resolvedAt ? new Date(d.resolvedAt).toISOString().slice(0, 10) : '',
+        Notes: d.notes || '',
+      };
+    });
+  }
+
+  async function exportToExcel() {
+    const btn = document.getElementById('exportBtn');
+    const original = btn.textContent;
+    btn.textContent = 'Preparing…';
+    btn.disabled = true;
+    try {
+      await loadXlsx();
+      const rows = exportRows();
+      if (!rows.length) { toast('Nothing to export yet'); return; }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 9 }, { wch: 13 }, { wch: 13 },
+        { wch: 12 }, { wch: 13 }, { wch: 10 }, { wch: 12 }, { wch: 28 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Deliveries');
+      XLSX.writeFile(wb, `shelf-life-export-${todayStr()}.xlsx`);
+      toast('Exported');
+    } catch (e) {
+      toast('Export failed — check your connection and try again');
+    } finally {
+      btn.textContent = original;
+      btn.disabled = false;
+    }
+  }
+  document.getElementById('exportBtn').addEventListener('click', exportToExcel);
 
   // ---------- boot ----------
   deliveries = loadLocal();

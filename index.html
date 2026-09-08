@@ -257,6 +257,31 @@
     position: absolute; inset: 22% 10%; border: 2px solid var(--moss); border-radius: 10px;
     box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
   }
+
+  /* ---------- auth gate ---------- */
+  .auth-wrap {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .auth-card {
+    width: 100%; max-width: 380px; background: var(--paper-raised); border: 1px solid var(--line);
+    border-radius: 16px; padding: 28px 26px 24px; box-shadow: var(--shadow);
+  }
+  .auth-brand { font-size: 26px; font-weight: 600; color: var(--moss-ink); margin-bottom: 3px; }
+  .auth-tag { color: var(--ink-dim); font-size: 13px; margin-bottom: 20px; }
+  .auth-tabs { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; margin-bottom: 18px; }
+  .auth-tab {
+    flex: 1; background: var(--paper-raised); color: var(--ink-dim); border: none; padding: 9px 0;
+    font-size: 13px; font-weight: 600; border-right: 1px solid var(--line);
+  }
+  .auth-tab:last-child { border-right: none; }
+  .auth-tab.active { background: var(--moss-dim); color: var(--moss-ink); }
+  .auth-submit { width: 100%; margin-top: 4px; }
+  .auth-error {
+    background: var(--rust-dim); color: var(--rust); font-size: 12.5px; padding: 9px 11px;
+    border-radius: 8px; margin-bottom: 13px;
+  }
+  .auth-hint { font-size: 12px; color: var(--ink-dim); text-align: center; margin-top: 16px; }
+  #logoutBtn { padding: 9px 12px; font-size: 13px; }
   .toast {
     position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 20px;
@@ -273,14 +298,43 @@
 </head>
 <body>
 
-<div class="wrap">
+<div class="auth-wrap" id="authGate">
+  <div class="auth-card">
+    <h1 class="auth-brand">Shelf Life</h1>
+    <div class="auth-tag">delivery-to-clearance expiry tracker</div>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-mode="signin">Sign in</button>
+      <button type="button" class="auth-tab" data-mode="signup">Create your store</button>
+    </div>
+    <form id="authForm">
+      <div class="field">
+        <label for="authStoreId">Store ID</label>
+        <input type="text" id="authStoreId" autocomplete="username" placeholder="e.g. high-street-store" required />
+      </div>
+      <div class="field">
+        <label for="authPassword">Password</label>
+        <input type="password" id="authPassword" autocomplete="current-password" placeholder="At least 6 characters" required />
+      </div>
+      <div class="field" id="authConfirmField" hidden>
+        <label for="authConfirm">Confirm password</label>
+        <input type="password" id="authConfirm" autocomplete="new-password" placeholder="Type it again" />
+      </div>
+      <div class="auth-error" id="authError" hidden></div>
+      <button type="submit" class="btn-primary auth-submit" id="authSubmit">Sign in</button>
+    </form>
+    <div class="auth-hint" id="authHint">Staff: ask your manager for this store's ID and password.</div>
+  </div>
+</div>
+
+<div class="wrap" id="appRoot" hidden>
   <header class="top">
     <div class="brand">
       <h1>Shelf Life</h1>
       <span class="tag">delivery-to-clearance expiry tracker</span>
     </div>
     <div class="top-controls">
-      <span class="sync-pill"><span class="sync-dot"></span>Saved on this device</span>
+      <span class="sync-pill"><span class="sync-dot"></span><span id="storeLabel">—</span></span>
+      <button class="btn-ghost" id="logoutBtn">Log out</button>
       <span class="window-setting">Alert window <input type="number" id="alertWindow" min="1" max="60" value="14" /> days</span>
       <button class="btn-ghost" id="exportBtn">⬇ Export to Excel</button>
       <button class="btn-primary" id="openAdd">+ Log delivery</button>
@@ -431,6 +485,9 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore-compat.js"></script>
 <script>
 (function () {
   const DAY = 86400000;
@@ -441,60 +498,63 @@
   let statusFilter = 'active';
   let searchTerm = '';
 
-  // ---------- storage: everything lives in this browser's localStorage ----------
-  const LOCAL_KEY = 'shelf-life-deliveries';
-  const WINDOW_KEY = 'shelf-life-alert-window';
-  function loadLocal() {
-    try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || sampleData(); }
-    catch (e) { return sampleData(); }
+  // ---------- Firebase: one store = one login, data lives in Firestore under stores/{uid} ----------
+  const firebaseConfig = {
+    apiKey: "AIzaSyC_jjuNqrZcnqICWeC-iMY-RfypiXLY34w",
+    authDomain: "shelf-life-16879.firebaseapp.com",
+    projectId: "shelf-life-16879",
+    storageBucket: "shelf-life-16879.firebasestorage.app",
+    messagingSenderId: "894880734603",
+    appId: "1:894880734603:web:115c538648378963eae38e"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const fs = firebase.firestore();
+  fs.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
+  let currentUid = null;
+  let catalogCache = {};
+  let unsubDeliveries = null, unsubCatalog = null, unsubSettings = null;
+
+  function storeDoc(uid) { return fs.collection('stores').doc(uid); }
+  function synthEmail(storeId) {
+    return storeId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') + '@shelflife.local';
   }
-  function saveLocal() {
-    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(deliveries)); } catch (e) {}
+
+  function startListening(uid) {
+    currentUid = uid;
+    const sDoc = storeDoc(uid);
+    unsubDeliveries = sDoc.collection('deliveries').onSnapshot((snap) => {
+      deliveries = snap.docs.map(doc => Object.assign({ id: doc.id }, doc.data()));
+      render();
+    }, () => toast('Sync error — check your connection'));
+    unsubCatalog = sDoc.collection('meta').doc('catalog').onSnapshot((snap) => {
+      catalogCache = snap.data() || {};
+    });
+    unsubSettings = sDoc.collection('meta').doc('settings').onSnapshot((snap) => {
+      const data = snap.data();
+      if (data && data.alertWindowDays) {
+        alertWindowDays = data.alertWindowDays;
+        document.getElementById('alertWindow').value = alertWindowDays;
+        render();
+      }
+    });
   }
-  function loadAlertWindow() {
-    try { return Number(localStorage.getItem(WINDOW_KEY)) || 14; } catch (e) { return 14; }
-  }
-  function saveAlertWindow(n) {
-    try { localStorage.setItem(WINDOW_KEY, String(n)); } catch (e) {}
+  function stopListening() {
+    if (unsubDeliveries) unsubDeliveries();
+    if (unsubCatalog) unsubCatalog();
+    if (unsubSettings) unsubSettings();
+    unsubDeliveries = unsubCatalog = unsubSettings = null;
+    deliveries = [];
+    catalogCache = {};
+    currentUid = null;
   }
 
   // ---------- product catalog: barcode -> {product, category}, learned as you go ----------
-  const CATALOG_KEY = 'shelf-life-catalog';
-  function loadCatalog() {
-    try { return JSON.parse(localStorage.getItem(CATALOG_KEY)) || {}; } catch (e) { return {}; }
-  }
+  function loadCatalog() { return catalogCache; }
   function saveCatalogEntry(barcode, product, category) {
-    if (!barcode) return;
-    try {
-      const catalog = loadCatalog();
-      catalog[barcode] = { product, category };
-      localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
-    } catch (e) {}
-  }
-  function backfillCatalog() {
-    const catalog = loadCatalog();
-    let changed = false;
-    deliveries.forEach(d => {
-      if (d.barcode && !catalog[d.barcode]) {
-        catalog[d.barcode] = { product: d.product, category: d.category };
-        changed = true;
-      }
-    });
-    if (changed) { try { localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog)); } catch (e) {} }
-  }
-  function sampleData() {
-    const t = Date.now();
-    const d = n => new Date(t + n * DAY).toISOString().slice(0, 10);
-    return [
-      { id: 'ex1', product: 'Whole milk 1L', category: 'Dairy', barcode: '5012345678900', qty: 24, deliveredDate: d(-2), expiryDate: d(4), dateType: 'use-by', notes: '', status: 'active', createdAt: t },
-      { id: 'ex1b', product: 'Whole milk 1L', category: 'Dairy', barcode: '5012345678900', qty: 12, deliveredDate: d(-6), expiryDate: d(1), dateType: 'use-by', notes: 'older batch, still on shelf', status: 'active', createdAt: t - 4 * DAY },
-      { id: 'ex2', product: 'Sourdough loaf', category: 'Bakery', barcode: '5012345601234', qty: 10, deliveredDate: d(-1), expiryDate: d(1), dateType: 'best-before', notes: '', status: 'active', createdAt: t },
-      { id: 'ex3', product: 'Greek yoghurt 500g', category: 'Dairy', qty: 18, deliveredDate: d(-3), expiryDate: d(11), dateType: 'best-before', notes: '', status: 'active', createdAt: t },
-      { id: 'ex4', product: 'Cherry tomatoes 250g', category: 'Produce', qty: 30, deliveredDate: d(-1), expiryDate: d(-1), dateType: 'best-before', notes: '', status: 'active', createdAt: t },
-      { id: 'ex5', product: 'Chicken breast fillets', category: 'Meat & poultry', qty: 15, deliveredDate: d(-4), expiryDate: d(20), dateType: 'use-by', notes: '', status: 'active', createdAt: t },
-      { id: 'ex6', product: 'Hummus 200g', category: 'Deli', qty: 12, deliveredDate: d(-10), expiryDate: d(-6), dateType: 'best-before', notes: '', status: 'discarded', resolvedAt: t - 2 * DAY, createdAt: t - 12 * DAY },
-      { id: 'ex7', product: 'Basil plant pot', category: 'Produce', qty: 8, deliveredDate: d(-9), expiryDate: d(-4), dateType: 'best-before', notes: '', status: 'cleared', resolvedAt: t - 3 * DAY, createdAt: t - 11 * DAY },
-    ];
+    if (!barcode || !currentUid) return;
+    storeDoc(currentUid).collection('meta').doc('catalog').set({ [barcode]: { product, category } }, { merge: true }).catch(() => {});
   }
 
   function tierFor(d) {
@@ -633,33 +693,30 @@
   }
 
   function resolveItem(id, status) {
-    const item = deliveries.find(d => d.id === id);
-    if (!item) return;
-    item.status = status;
-    item.resolvedAt = Date.now();
-    saveLocal();
-    render();
+    if (!currentUid) return;
+    storeDoc(currentUid).collection('deliveries').doc(id).update({ status, resolvedAt: Date.now() })
+      .catch(() => toast('Could not sync — will retry when back online'));
     toast(status === 'cleared' ? 'Marked cleared — nice, that\'s stock saved' : 'Marked as waste');
   }
 
   function deleteItem(id) {
-    deliveries = deliveries.filter(d => d.id !== id);
-    saveLocal();
-    render();
+    if (!currentUid) return;
+    storeDoc(currentUid).collection('deliveries').doc(id).delete().catch(() => {});
   }
 
   function addDelivery(data) {
-    deliveries.push(Object.assign({ id: 'd-' + Date.now() }, data));
-    saveLocal();
+    if (!currentUid) return false;
+    storeDoc(currentUid).collection('deliveries').add(data)
+      .catch(() => toast('Could not save — will retry when back online'));
     saveCatalogEntry(data.barcode, data.product, data.category);
-    render();
     return true;
   }
 
   function setAlertWindow(n) {
     alertWindowDays = n;
-    saveAlertWindow(n);
     render();
+    if (!currentUid) return;
+    storeDoc(currentUid).collection('meta').doc('settings').set({ alertWindowDays: n }, { merge: true }).catch(() => {});
   }
 
   // ---------- wiring ----------
@@ -887,12 +944,100 @@
   }
   document.getElementById('exportBtn').addEventListener('click', exportToExcel);
 
+  // ---------- auth: sign in / create store / log out ----------
+  let authMode = 'signin';
+  document.querySelectorAll('.auth-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      authMode = tab.dataset.mode;
+      document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t === tab));
+      document.getElementById('authConfirmField').hidden = authMode !== 'signup';
+      document.getElementById('authConfirm').required = authMode === 'signup';
+      document.getElementById('authSubmit').textContent = authMode === 'signup' ? 'Create store' : 'Sign in';
+      document.getElementById('authHint').textContent = authMode === 'signup'
+        ? 'Pick a Store ID your staff will recognize — you\'ll share this ID and password with them.'
+        : 'Staff: ask your manager for this store\'s ID and password.';
+      document.getElementById('authError').hidden = true;
+    });
+  });
+
+  function authErrorMessage(err) {
+    switch (err.code) {
+      case 'auth/email-already-in-use': return 'That Store ID is already taken. Try another, or sign in instead.';
+      case 'auth/weak-password': return 'Password must be at least 6 characters.';
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found': return 'Store ID or password is incorrect.';
+      case 'auth/invalid-email': return 'Store ID contains characters that aren\'t allowed.';
+      case 'auth/too-many-requests': return 'Too many attempts — wait a moment and try again.';
+      case 'custom/mismatch': return 'Passwords don\'t match.';
+      case 'custom/timeout': return 'Taking too long — check your connection and try again.';
+      default: return 'Something went wrong — check your connection and try again.';
+    }
+  }
+
+  document.getElementById('authForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('authError');
+    errEl.hidden = true;
+    const storeIdRaw = document.getElementById('authStoreId').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const submitBtn = document.getElementById('authSubmit');
+
+    if (!/^[a-zA-Z0-9_-]{3,40}$/.test(storeIdRaw)) {
+      errEl.textContent = 'Store ID can only use letters, numbers, - and _, 3-40 characters.';
+      errEl.hidden = false;
+      return;
+    }
+    const email = synthEmail(storeIdRaw);
+    const originalText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = authMode === 'signup' ? 'Creating…' : 'Signing in…';
+    const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject({ code: 'custom/timeout' }), ms));
+    try {
+      await Promise.race([
+        (async () => {
+          if (authMode === 'signup') {
+            const confirm = document.getElementById('authConfirm').value;
+            if (password !== confirm) throw { code: 'custom/mismatch' };
+            const cred = await auth.createUserWithEmailAndPassword(email, password);
+            await fs.collection('stores').doc(cred.user.uid).set({
+              storeId: storeIdRaw,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+          } else {
+            await auth.signInWithEmailAndPassword(email, password);
+          }
+        })(),
+        timeout(15000),
+      ]);
+    } catch (err) {
+      errEl.textContent = authErrorMessage(err);
+      errEl.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', () => auth.signOut());
+
   // ---------- boot ----------
-  deliveries = loadLocal();
-  alertWindowDays = loadAlertWindow();
-  backfillCatalog();
-  document.getElementById('alertWindow').value = alertWindowDays;
-  render();
+  auth.onAuthStateChanged((user) => {
+    if (user) {
+      document.getElementById('authGate').hidden = true;
+      document.getElementById('appRoot').hidden = false;
+      startListening(user.uid);
+      storeDoc(user.uid).get().then((snap) => {
+        const data = snap.data();
+        document.getElementById('storeLabel').textContent = (data && data.storeId) || 'Store';
+      });
+      render();
+    } else {
+      stopListening();
+      document.getElementById('appRoot').hidden = true;
+      document.getElementById('authGate').hidden = false;
+    }
+  });
 })();
 </script>
 </body>

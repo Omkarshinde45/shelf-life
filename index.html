@@ -149,11 +149,24 @@
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     margin-bottom: 14px;
   }
-  .filters select, .filters input[type=search] {
+  .filters select, .filters input[type=search], .filters input[type=date] {
     font: inherit; background: var(--paper-raised); color: var(--ink);
     border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
   }
   .filters input[type=search] { min-width: 200px; flex: 1 1 200px; }
+  .date-range {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px 3px 10px;
+    background: var(--paper-raised);
+  }
+  .date-range input[type=date] { border: none; background: transparent; padding: 5px 2px; }
+  .date-range-label { font-size: 12.5px; color: var(--ink-dim); white-space: nowrap; }
+  .date-range-sep { color: var(--ink-dim); }
+  .btn-clear-dates {
+    background: transparent; border: none; color: var(--ink-dim); font-size: 12px;
+    width: 22px; height: 22px; border-radius: 50%; line-height: 1;
+  }
+  .btn-clear-dates:hover { background: var(--line-soft); color: var(--ink); }
   .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button {
     background: var(--paper-raised); color: var(--ink-dim); border: none; border-radius: 0;
@@ -373,6 +386,24 @@
       <button data-v="resolved">Resolved</button>
     </div>
     <input type="search" id="search" placeholder="Search product…" />
+    <select id="categoryFilter">
+      <option value="">All categories</option>
+      <option>Produce</option>
+      <option>Dairy</option>
+      <option>Bakery</option>
+      <option>Meat &amp; poultry</option>
+      <option>Deli</option>
+      <option>Frozen</option>
+      <option>Grocery / packaged</option>
+      <option>Other</option>
+    </select>
+    <div class="date-range">
+      <span class="date-range-label">Delivered</span>
+      <input type="date" id="dateFrom" aria-label="From date" />
+      <span class="date-range-sep">–</span>
+      <input type="date" id="dateTo" aria-label="To date" />
+      <button type="button" class="btn-clear-dates" id="clearDates" title="Clear date range" hidden>✕</button>
+    </div>
   </div>
 
   <div class="table-scroll">
@@ -498,6 +529,9 @@
   let alertWindowDays = 14;
   let statusFilter = 'active';
   let searchTerm = '';
+  let categoryFilter = '';
+  let dateFrom = '';
+  let dateTo = '';
 
   // ---------- Firebase: one store = one login, data lives in Firestore under stores/{uid} ----------
   const firebaseConfig = {
@@ -595,6 +629,9 @@
   function render() {
     let list = deliveries.slice();
     if (searchTerm) list = list.filter(d => d.product.toLowerCase().includes(searchTerm.toLowerCase()));
+    if (categoryFilter) list = list.filter(d => d.category === categoryFilter);
+    if (dateFrom) list = list.filter(d => d.deliveredDate >= dateFrom);
+    if (dateTo) list = list.filter(d => d.deliveredDate <= dateTo);
 
     const active = list.filter(d => d.status === 'active');
     const resolved = list.filter(d => d.status !== 'active');
@@ -874,6 +911,27 @@
   });
 
   document.getElementById('search').addEventListener('input', (e) => { searchTerm = e.target.value; render(); });
+  document.getElementById('categoryFilter').addEventListener('change', (e) => { categoryFilter = e.target.value; render(); });
+  function updateClearDatesVisibility() {
+    document.getElementById('clearDates').hidden = !dateFrom && !dateTo;
+  }
+  document.getElementById('dateFrom').addEventListener('change', (e) => {
+    dateFrom = e.target.value;
+    updateClearDatesVisibility();
+    render();
+  });
+  document.getElementById('dateTo').addEventListener('change', (e) => {
+    dateTo = e.target.value;
+    updateClearDatesVisibility();
+    render();
+  });
+  document.getElementById('clearDates').addEventListener('click', () => {
+    dateFrom = ''; dateTo = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    updateClearDatesVisibility();
+    render();
+  });
   document.getElementById('statusSeg').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-v]');
     if (!btn) return;

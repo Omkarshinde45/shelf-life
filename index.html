@@ -211,6 +211,7 @@
   .row-actions button.clear:hover { background: var(--moss-dim); color: var(--moss-ink); border-color: var(--moss); }
   .row-actions button.waste:hover { background: var(--rust-dim); color: var(--rust); border-color: var(--rust); }
   .row-actions button.del:hover { background: var(--line-soft); color: var(--ink); }
+  .row-actions button.edit:hover { background: var(--moss-dim); color: var(--moss-ink); border-color: var(--moss); }
 
   .empty-state { text-align: center; padding: 48px 20px; color: var(--ink-dim); }
   .empty-state .big { font-family: 'Fraunces', serif; font-size: 19px; color: var(--ink); margin-bottom: 6px; }
@@ -440,8 +441,8 @@
 
 <div class="modal-backdrop" id="modalBackdrop" style="display:none">
   <div class="modal">
-    <h2>Log a delivery</h2>
-    <div class="sub">One entry per product batch. You'll get a markdown alert well before it expires.</div>
+    <h2 id="modalTitle">Log a delivery</h2>
+    <div class="sub" id="modalSub">One entry per product batch. You'll get a markdown alert well before it expires.</div>
     <form id="addForm">
       <div class="field">
         <label for="fBarcode">Barcode <span class="hint">optional — speeds up repeat products</span></label>
@@ -495,7 +496,7 @@
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" id="cancelAdd">Cancel</button>
-        <button type="submit" class="btn-primary">Save entry</button>
+        <button type="submit" class="btn-primary" id="addSubmit">Save entry</button>
       </div>
     </form>
   </div>
@@ -532,6 +533,7 @@
   let categoryFilter = '';
   let dateFrom = '';
   let dateTo = '';
+  let editingId = null;
 
   // ---------- Firebase: one store = one login, data lives in Firestore under stores/{uid} ----------
   const firebaseConfig = {
@@ -705,6 +707,7 @@
         <td>
           <div class="row-actions">
             ${resolved ? '' : `<button class="clear" title="Mark cleared / sold" data-act="clear" data-id="${d.id}">✓</button><button class="waste" title="Mark discarded / wasted" data-act="waste" data-id="${d.id}">✕</button>`}
+            <button class="edit" title="Edit entry" data-act="edit" data-id="${d.id}">✎</button>
             <button class="del" title="Delete entry" data-act="del" data-id="${d.id}">🗑</button>
           </div>
         </td>
@@ -727,6 +730,7 @@
       if (act === 'clear') resolveItem(id, 'cleared');
       else if (act === 'waste') resolveItem(id, 'discarded');
       else if (act === 'del') deleteItem(id);
+      else if (act === 'edit') openEditModal(id);
     });
   }
 
@@ -750,6 +754,14 @@
     return true;
   }
 
+  function updateDelivery(id, data) {
+    if (!currentUid) return false;
+    storeDoc(currentUid).collection('deliveries').doc(id).update(data)
+      .catch(() => toast('Could not save — will retry when back online'));
+    saveCatalogEntry(data.barcode, data.product, data.category);
+    return true;
+  }
+
   function setAlertWindow(n) {
     alertWindowDays = n;
     render();
@@ -761,6 +773,10 @@
   document.getElementById('fDelivered').value = todayStr();
 
   document.getElementById('openAdd').addEventListener('click', () => {
+    editingId = null;
+    document.getElementById('modalTitle').textContent = 'Log a delivery';
+    document.getElementById('modalSub').textContent = 'One entry per product batch. You\'ll get a markdown alert well before it expires.';
+    document.getElementById('addSubmit').textContent = 'Save entry';
     document.getElementById('modalBackdrop').style.display = 'flex';
     document.getElementById('catalogHint').hidden = true;
     document.getElementById('fProduct').focus();
@@ -774,7 +790,28 @@
     document.getElementById('addForm').reset();
     document.getElementById('fDelivered').value = todayStr();
     document.getElementById('catalogHint').hidden = true;
+    editingId = null;
     stopScan();
+  }
+
+  function openEditModal(id) {
+    const item = deliveries.find(d => d.id === id);
+    if (!item) return;
+    editingId = id;
+    document.getElementById('modalTitle').textContent = 'Edit delivery';
+    document.getElementById('modalSub').textContent = 'Update this batch\'s details.';
+    document.getElementById('addSubmit').textContent = 'Save changes';
+    document.getElementById('fBarcode').value = item.barcode || '';
+    document.getElementById('fProduct').value = item.product || '';
+    document.getElementById('fCategory').value = item.category || 'Produce';
+    document.getElementById('fQty').value = item.qty || 1;
+    document.getElementById('fDelivered').value = item.deliveredDate || todayStr();
+    document.getElementById('fExpiry').value = item.expiryDate || '';
+    document.querySelector(`input[name=dateType][value="${item.dateType === 'use-by' ? 'use-by' : 'best-before'}"]`).checked = true;
+    document.getElementById('fNotes').value = item.notes || '';
+    document.getElementById('catalogHint').hidden = true;
+    document.getElementById('modalBackdrop').style.display = 'flex';
+    document.getElementById('fProduct').focus();
   }
 
   function applyBarcodeLookup(code) {
@@ -807,13 +844,17 @@
       expiryDate: document.getElementById('fExpiry').value,
       dateType: document.querySelector('input[name=dateType]:checked').value,
       notes: document.getElementById('fNotes').value.trim(),
-      status: 'active',
-      createdAt: Date.now(),
     };
     if (!data.product || !data.deliveredDate || !data.expiryDate) return;
-    addDelivery(data);
-    closeModal();
-    toast('Delivery logged');
+    if (editingId) {
+      updateDelivery(editingId, data);
+      closeModal();
+      toast('Delivery updated');
+    } else {
+      addDelivery(Object.assign({ status: 'active', createdAt: Date.now() }, data));
+      closeModal();
+      toast('Delivery logged');
+    }
   });
 
   // ---------- barcode camera scanning ----------

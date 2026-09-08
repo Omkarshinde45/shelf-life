@@ -1,0 +1,792 @@
+<title>Shelf Life</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  :root {
+    --paper: #f6f3ec;
+    --paper-raised: #fffdf8;
+    --ink: #23291f;
+    --ink-dim: #6b6b5e;
+    --moss: #2f6b4f;
+    --moss-ink: #1d4a35;
+    --moss-dim: #e4ede6;
+    --amber: #b6691f;
+    --amber-dim: #f5e4cc;
+    --rust: #a63b23;
+    --rust-dim: #f5dcd3;
+    --line: #ddd5c4;
+    --line-soft: #e8e2d4;
+    --shadow: 0 1px 2px rgba(35,41,31,0.06), 0 8px 24px rgba(35,41,31,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14170f;
+      --paper-raised: #1c2016;
+      --ink: #ece7da;
+      --ink-dim: #a3a08e;
+      --moss: #74c294;
+      --moss-ink: #bfe8d1;
+      --moss-dim: #1d2b1f;
+      --amber: #e3a857;
+      --amber-dim: #33270f;
+      --rust: #e2836a;
+      --rust-dim: #341b13;
+      --line: #33362a;
+      --line-soft: #262922;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14170f;
+    --paper-raised: #1c2016;
+    --ink: #ece7da;
+    --ink-dim: #a3a08e;
+    --moss: #74c294;
+    --moss-ink: #bfe8d1;
+    --moss-dim: #1d2b1f;
+    --amber: #e3a857;
+    --amber-dim: #33270f;
+    --rust: #e2836a;
+    --rust-dim: #341b13;
+    --line: #33362a;
+    --line-soft: #262922;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; }
+
+  h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; text-wrap: balance; margin: 0; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  /* ---------- header ---------- */
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 { font-size: 27px; font-weight: 600; color: var(--moss-ink); }
+  .brand .tag { color: var(--ink-dim); font-size: 13px; }
+  .top-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .sync-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-dim);
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 20px;
+  }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--moss); flex: none; }
+
+  .window-setting { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-dim); }
+  .window-setting input {
+    width: 46px; font: inherit; font-weight: 600; color: var(--ink);
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 6px; text-align: center;
+  }
+
+  button {
+    font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: var(--moss); color: var(--paper-raised); font-weight: 600;
+    padding: 10px 16px; border: none; box-shadow: var(--shadow);
+  }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .btn-ghost {
+    background: transparent; color: var(--ink); border: 1px solid var(--line);
+    padding: 9px 14px;
+  }
+  .btn-ghost:hover { background: var(--line-soft); }
+  button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+    outline: 2px solid var(--moss); outline-offset: 2px;
+  }
+
+  /* ---------- stat tiles ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+  .stat {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 16px 14px;
+  }
+  .stat .label { font-size: 12px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .value { font-size: 30px; font-weight: 600; margin-top: 6px; font-family: 'Fraunces', serif; }
+  .stat.warn .value { color: var(--amber); }
+  .stat.crit .value { color: var(--rust); }
+  .stat .sub { font-size: 12px; color: var(--ink-dim); margin-top: 3px; }
+  .ratio-bar { display: flex; height: 6px; border-radius: 4px; overflow: hidden; margin-top: 10px; background: var(--line-soft); }
+  .ratio-bar .saved { background: var(--moss); }
+  .ratio-bar .lost { background: var(--rust); }
+
+  /* ---------- filter bar ---------- */
+  .filters {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .filters select, .filters input[type=search] {
+    font: inherit; background: var(--paper-raised); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  .filters input[type=search] { min-width: 200px; flex: 1 1 200px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: var(--paper-raised); color: var(--ink-dim); border: none; border-radius: 0;
+    padding: 8px 13px; font-size: 13px; border-right: 1px solid var(--line);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.active { background: var(--moss-dim); color: var(--moss-ink); font-weight: 600; }
+
+  /* ---------- table ---------- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-raised); box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; min-width: 880px; }
+  thead th {
+    text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--ink-dim); font-weight: 600; padding: 12px 14px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--paper-raised);
+  }
+  tbody td { padding: 12px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.resolved { opacity: 0.55; }
+  .product-cell .name { font-weight: 600; }
+  .product-cell .meta { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+  .datetag { font-size: 11px; padding: 1px 6px; border-radius: 5px; background: var(--line-soft); color: var(--ink-dim); margin-left: 6px; }
+
+  .days-badge { font-size: 17px; font-weight: 600; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
+    padding: 4px 9px; border-radius: 20px; white-space: nowrap;
+  }
+  .pill.ok { background: var(--moss-dim); color: var(--moss-ink); }
+  .pill.notice { background: var(--amber-dim); color: var(--amber); }
+  .pill.warning { background: var(--amber-dim); color: var(--amber); }
+  .pill.critical, .pill.expired { background: var(--rust-dim); color: var(--rust); }
+  .pill.cleared { background: var(--moss-dim); color: var(--moss-ink); }
+  .pill.discarded { background: var(--line-soft); color: var(--ink-dim); }
+
+  .action-text { font-size: 12.5px; color: var(--ink-dim); max-width: 200px; }
+  .row-actions { display: flex; gap: 6px; }
+  .row-actions button {
+    background: var(--paper-raised); border: 1px solid var(--line); color: var(--ink-dim);
+    width: 30px; height: 30px; border-radius: 7px; font-size: 14px; line-height: 1;
+  }
+  .row-actions button.clear:hover { background: var(--moss-dim); color: var(--moss-ink); border-color: var(--moss); }
+  .row-actions button.waste:hover { background: var(--rust-dim); color: var(--rust); border-color: var(--rust); }
+  .row-actions button.del:hover { background: var(--line-soft); color: var(--ink); }
+
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--ink-dim); }
+  .empty-state .big { font-family: 'Fraunces', serif; font-size: 19px; color: var(--ink); margin-bottom: 6px; }
+
+  /* ---------- ideas panel ---------- */
+  details.ideas {
+    margin-top: 26px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-raised);
+    padding: 14px 18px;
+  }
+  details.ideas summary { cursor: pointer; font-weight: 600; font-size: 14px; list-style: none; display: flex; align-items: center; gap: 8px; }
+  details.ideas summary::-webkit-details-marker { display: none; }
+  details.ideas summary::before { content: "＋"; color: var(--moss); font-weight: 700; transition: transform 0.15s; }
+  details.ideas[open] summary::before { content: "－"; }
+  .idea-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 14px; }
+  .idea { font-size: 13px; color: var(--ink-dim); }
+  .idea .t { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; }
+
+  /* ---------- modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,23,15,0.45); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 20;
+  }
+  .modal {
+    background: var(--paper-raised); border-radius: 14px; width: 100%; max-width: 480px;
+    padding: 24px; box-shadow: var(--shadow); max-height: 90vh; overflow-y: auto;
+  }
+  .modal h2 { font-size: 19px; margin-bottom: 4px; }
+  .modal .sub { font-size: 13px; color: var(--ink-dim); margin-bottom: 18px; }
+  .field { margin-bottom: 13px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-dim); margin-bottom: 5px; }
+  .field input, .field select, .field textarea {
+    width: 100%; font: inherit; background: var(--paper); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .radio-row { display: flex; gap: 14px; }
+  .radio-row label { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--ink); font-size: 13px; }
+  .radio-row input { width: auto; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .field label .hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-dim); font-size: 11.5px; }
+  .barcode-row { display: flex; gap: 8px; }
+  .barcode-row input { flex: 1; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  .btn-scan {
+    flex: none; width: 42px; background: var(--moss-dim); border: 1px solid var(--line);
+    font-size: 18px; border-radius: 8px; line-height: 1;
+  }
+  .btn-scan:hover { background: var(--moss); }
+  .field-note { font-size: 12px; color: var(--moss-ink); margin-top: 6px; }
+  .field-note.miss { color: var(--ink-dim); }
+  .scan-modal { max-width: 420px; }
+  .scan-viewport {
+    position: relative; width: 100%; aspect-ratio: 4 / 3; background: #10130d;
+    border-radius: 10px; overflow: hidden; margin-bottom: 12px;
+  }
+  .scan-viewport video { width: 100%; height: 100%; object-fit: cover; }
+  .scan-frame {
+    position: absolute; inset: 22% 10%; border: 2px solid var(--moss); border-radius: 10px;
+    box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
+  }
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 20px;
+    font-size: 13px; box-shadow: var(--shadow); z-index: 30; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .idea-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Shelf Life</h1>
+      <span class="tag">delivery-to-clearance expiry tracker</span>
+    </div>
+    <div class="top-controls">
+      <span class="sync-pill"><span class="sync-dot"></span>Saved on this device</span>
+      <span class="window-setting">Alert window <input type="number" id="alertWindow" min="1" max="60" value="14" /> days</span>
+      <button class="btn-primary" id="openAdd">+ Log delivery</button>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div class="stat">
+      <div class="label">Active items tracked</div>
+      <div class="value tabular" id="statActive">0</div>
+      <div class="sub" id="statActiveSub">across 0 categories</div>
+    </div>
+    <div class="stat warn">
+      <div class="label">Needs a markdown</div>
+      <div class="value tabular" id="statNeeds">0</div>
+      <div class="sub">within alert window</div>
+    </div>
+    <div class="stat crit">
+      <div class="label">Critical / expired</div>
+      <div class="value tabular" id="statCrit">0</div>
+      <div class="sub">3 days or less</div>
+    </div>
+    <div class="stat">
+      <div class="label">Cleared vs. wasted (30d)</div>
+      <div class="value tabular" id="statRatio">—</div>
+      <div class="sub" id="statRatioSub">no resolved items yet</div>
+      <div class="ratio-bar"><div class="saved" id="ratioSaved" style="width:0%"></div><div class="lost" id="ratioLost" style="width:0%"></div></div>
+    </div>
+  </section>
+
+  <div class="filters">
+    <div class="seg" id="statusSeg">
+      <button data-v="active" class="active">Active</button>
+      <button data-v="all">All</button>
+      <button data-v="resolved">Resolved</button>
+    </div>
+    <input type="search" id="search" placeholder="Search product…" />
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Qty</th>
+          <th>Delivered</th>
+          <th>Days left</th>
+          <th>Status</th>
+          <th>Suggested action</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty-state" id="emptyState" style="display:none">
+      <div class="big">Nothing tracked yet</div>
+      <div>Log your first delivery to start seeing markdown alerts here.</div>
+    </div>
+  </div>
+
+  <details class="ideas">
+    <summary>More ways to cut wastage further</summary>
+    <div class="idea-grid">
+      <div class="idea"><span class="t">Tiered markdown, on autopilot</span>This board already tags 15% off at 14 days, 30% at 7, and 50%+ at 3 — so pricing staff act on the pill, not on memory.</div>
+      <div class="idea"><span class="t">Face out by days-left, not delivery date</span>When restocking a shelf, pull the lowest "days left" number to the front — FIFO by expiry beats FIFO by arrival when a slower-selling batch has a shorter date.</div>
+      <div class="idea"><span class="t">Right-size the next order</span>If the same product keeps showing up in "discarded," that's a signal to order less of it next delivery, not to discount it faster.</div>
+      <div class="idea"><span class="t">Review the 30-day ratio weekly</span>A falling "cleared vs. wasted" ratio usually means a delivery is arriving with too little shelf life left — worth a note back to that supplier.</div>
+    </div>
+  </details>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" style="display:none">
+  <div class="modal">
+    <h2>Log a delivery</h2>
+    <div class="sub">One entry per product batch. You'll get a markdown alert well before it expires.</div>
+    <form id="addForm">
+      <div class="field">
+        <label for="fBarcode">Barcode <span class="hint">optional — speeds up repeat products</span></label>
+        <div class="barcode-row">
+          <input type="text" id="fBarcode" inputmode="numeric" placeholder="Scan, type, or use a scanner gun" />
+          <button type="button" class="btn-scan" id="openScan" title="Scan with camera">📷</button>
+        </div>
+        <div class="field-note" id="catalogHint" hidden></div>
+      </div>
+      <div class="field">
+        <label for="fProduct">Product name</label>
+        <input type="text" id="fProduct" required placeholder="e.g. Whole milk 1L" />
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fCategory">Category</label>
+          <select id="fCategory">
+            <option>Produce</option>
+            <option>Dairy</option>
+            <option>Bakery</option>
+            <option>Meat &amp; poultry</option>
+            <option>Deli</option>
+            <option>Frozen</option>
+            <option>Grocery / packaged</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="fQty">Quantity</label>
+          <input type="number" id="fQty" min="1" value="1" required />
+        </div>
+      </div>
+      <div class="field">
+        <label for="fDelivered">Delivery date</label>
+        <input type="date" id="fDelivered" required />
+      </div>
+      <div class="field">
+        <label for="fExpiry">Expiry date</label>
+        <input type="date" id="fExpiry" required />
+      </div>
+      <div class="field">
+        <label>Date type</label>
+        <div class="radio-row">
+          <label><input type="radio" name="dateType" value="best-before" checked /> Best before (quality)</label>
+          <label><input type="radio" name="dateType" value="use-by" /> Use by (safety)</label>
+        </div>
+      </div>
+      <div class="field">
+        <label for="fNotes">Notes (optional)</label>
+        <input type="text" id="fNotes" placeholder="batch no., supplier, shelf location…" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" id="cancelAdd">Cancel</button>
+        <button type="submit" class="btn-primary">Save entry</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="scanBackdrop" style="display:none">
+  <div class="modal scan-modal">
+    <h2>Scan barcode</h2>
+    <div class="scan-viewport">
+      <video id="scanVideo" autoplay muted playsinline></video>
+      <div class="scan-frame"></div>
+    </div>
+    <div class="sub" id="scanStatus">Point the camera at the barcode.</div>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost" id="cancelScan">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const DAY = 86400000;
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  let deliveries = [];
+  let alertWindowDays = 14;
+  let statusFilter = 'active';
+  let searchTerm = '';
+
+  // ---------- storage: everything lives in this browser's localStorage ----------
+  const LOCAL_KEY = 'shelf-life-deliveries';
+  const WINDOW_KEY = 'shelf-life-alert-window';
+  function loadLocal() {
+    try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || sampleData(); }
+    catch (e) { return sampleData(); }
+  }
+  function saveLocal() {
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(deliveries)); } catch (e) {}
+  }
+  function loadAlertWindow() {
+    try { return Number(localStorage.getItem(WINDOW_KEY)) || 14; } catch (e) { return 14; }
+  }
+  function saveAlertWindow(n) {
+    try { localStorage.setItem(WINDOW_KEY, String(n)); } catch (e) {}
+  }
+
+  // ---------- product catalog: barcode -> {product, category}, learned as you go ----------
+  const CATALOG_KEY = 'shelf-life-catalog';
+  function loadCatalog() {
+    try { return JSON.parse(localStorage.getItem(CATALOG_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function saveCatalogEntry(barcode, product, category) {
+    if (!barcode) return;
+    try {
+      const catalog = loadCatalog();
+      catalog[barcode] = { product, category };
+      localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog));
+    } catch (e) {}
+  }
+  function backfillCatalog() {
+    const catalog = loadCatalog();
+    let changed = false;
+    deliveries.forEach(d => {
+      if (d.barcode && !catalog[d.barcode]) {
+        catalog[d.barcode] = { product: d.product, category: d.category };
+        changed = true;
+      }
+    });
+    if (changed) { try { localStorage.setItem(CATALOG_KEY, JSON.stringify(catalog)); } catch (e) {} }
+  }
+  function sampleData() {
+    const t = Date.now();
+    const d = n => new Date(t + n * DAY).toISOString().slice(0, 10);
+    return [
+      { id: 'ex1', product: 'Whole milk 1L', category: 'Dairy', barcode: '5012345678900', qty: 24, deliveredDate: d(-2), expiryDate: d(4), dateType: 'use-by', notes: '', status: 'active', createdAt: t },
+      { id: 'ex1b', product: 'Whole milk 1L', category: 'Dairy', barcode: '5012345678900', qty: 12, deliveredDate: d(-6), expiryDate: d(1), dateType: 'use-by', notes: 'older batch, still on shelf', status: 'active', createdAt: t - 4 * DAY },
+      { id: 'ex2', product: 'Sourdough loaf', category: 'Bakery', barcode: '5012345601234', qty: 10, deliveredDate: d(-1), expiryDate: d(1), dateType: 'best-before', notes: '', status: 'active', createdAt: t },
+      { id: 'ex3', product: 'Greek yoghurt 500g', category: 'Dairy', qty: 18, deliveredDate: d(-3), expiryDate: d(11), dateType: 'best-before', notes: '', status: 'active', createdAt: t },
+      { id: 'ex4', product: 'Cherry tomatoes 250g', category: 'Produce', qty: 30, deliveredDate: d(-1), expiryDate: d(-1), dateType: 'best-before', notes: '', status: 'active', createdAt: t },
+      { id: 'ex5', product: 'Chicken breast fillets', category: 'Meat & poultry', qty: 15, deliveredDate: d(-4), expiryDate: d(20), dateType: 'use-by', notes: '', status: 'active', createdAt: t },
+      { id: 'ex6', product: 'Hummus 200g', category: 'Deli', qty: 12, deliveredDate: d(-10), expiryDate: d(-6), dateType: 'best-before', notes: '', status: 'discarded', resolvedAt: t - 2 * DAY, createdAt: t - 12 * DAY },
+      { id: 'ex7', product: 'Basil plant pot', category: 'Produce', qty: 8, deliveredDate: d(-9), expiryDate: d(-4), dateType: 'best-before', notes: '', status: 'cleared', resolvedAt: t - 3 * DAY, createdAt: t - 11 * DAY },
+    ];
+  }
+
+  function tierFor(d) {
+    if (d < 0) return 'expired';
+    if (d <= 3) return 'critical';
+    if (d <= 7) return 'warning';
+    if (d <= alertWindowDays) return 'notice';
+    return 'ok';
+  }
+  function actionFor(d, dateType) {
+    const safety = dateType === 'use-by';
+    if (d < 0) return safety ? 'Use-by passed — pull from shelf now' : 'Best-before passed — check quality before clearance';
+    if (d <= 3) return safety ? 'Clearance 50%+ off — sell today' : 'Clearance 50%+ off, or pull if quality has dropped';
+    if (d <= 7) return 'Markdown ~30% off, face to front';
+    if (d <= alertWindowDays) return 'Markdown ~15% off, move to front';
+    return 'On track';
+  }
+  function tierLabel(t) {
+    return { ok: 'On track', notice: 'Watch', warning: 'Markdown', critical: 'Critical', expired: 'Expired' }[t];
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  // ---------- render ----------
+  function daysLeft(item) {
+    const today = new Date(todayStr());
+    const exp = new Date(item.expiryDate);
+    return Math.round((exp - today) / DAY);
+  }
+
+  function render() {
+    let list = deliveries.slice();
+    if (searchTerm) list = list.filter(d => d.product.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const active = list.filter(d => d.status === 'active');
+    const resolved = list.filter(d => d.status !== 'active');
+
+    let shown;
+    if (statusFilter === 'active') shown = active;
+    else if (statusFilter === 'resolved') shown = resolved;
+    else shown = active.concat(resolved);
+
+    active.forEach(d => d._days = daysLeft(d));
+    active.sort((a, b) => a._days - b._days);
+    resolved.sort((a, b) => (b.resolvedAt || 0) - (a.resolvedAt || 0));
+    if (statusFilter === 'all') shown = active.concat(resolved);
+    else if (statusFilter === 'active') shown = active;
+    else shown = resolved;
+
+    const rowsEl = document.getElementById('rows');
+    const emptyEl = document.getElementById('emptyState');
+    if (shown.length === 0) {
+      rowsEl.innerHTML = '';
+      emptyEl.style.display = '';
+    } else {
+      emptyEl.style.display = 'none';
+      rowsEl.innerHTML = shown.map(rowHtml).join('');
+    }
+
+    // stats (computed off the full active set, not the filtered view)
+    const allActive = deliveries.filter(d => d.status === 'active');
+    allActive.forEach(d => d._days = daysLeft(d));
+    document.getElementById('statActive').textContent = allActive.length;
+    const catCount = new Set(allActive.map(d => d.category)).size;
+    document.getElementById('statActiveSub').textContent = `across ${catCount} categor${catCount === 1 ? 'y' : 'ies'}`;
+    document.getElementById('statNeeds').textContent = allActive.filter(d => d._days <= alertWindowDays).length;
+    document.getElementById('statCrit').textContent = allActive.filter(d => d._days <= 3).length;
+
+    const cutoff = Date.now() - 30 * DAY;
+    const recentResolved = deliveries.filter(d => d.status !== 'active' && (d.resolvedAt || 0) >= cutoff);
+    const cleared = recentResolved.filter(d => d.status === 'cleared').length;
+    const discarded = recentResolved.filter(d => d.status === 'discarded').length;
+    const total = cleared + discarded;
+    if (total === 0) {
+      document.getElementById('statRatio').textContent = '—';
+      document.getElementById('statRatioSub').textContent = 'no resolved items yet';
+      document.getElementById('ratioSaved').style.width = '0%';
+      document.getElementById('ratioLost').style.width = '0%';
+    } else {
+      const pct = Math.round((cleared / total) * 100);
+      document.getElementById('statRatio').textContent = pct + '%';
+      document.getElementById('statRatioSub').textContent = `${cleared} cleared · ${discarded} wasted`;
+      document.getElementById('ratioSaved').style.width = pct + '%';
+      document.getElementById('ratioLost').style.width = (100 - pct) + '%';
+    }
+  }
+
+  function rowHtml(d) {
+    const resolved = d.status !== 'active';
+    const days = resolved ? null : d._days;
+    const tier = resolved ? d.status : tierFor(days);
+    const dateTag = d.dateType === 'use-by' ? 'use by' : 'best before';
+    return `
+      <tr class="${resolved ? 'resolved' : ''}">
+        <td class="product-cell">
+          <div class="name">${escapeHtml(d.product)}</div>
+          <div class="meta">${escapeHtml(d.category || '')}${d.barcode ? ' · ' + escapeHtml(d.barcode) : ''}${d.notes ? ' · ' + escapeHtml(d.notes) : ''}</div>
+        </td>
+        <td class="tabular">${d.qty}</td>
+        <td class="mono">${d.deliveredDate}<span class="datetag">${dateTag}</span></td>
+        <td>${resolved ? '<span class="mono" style="color:var(--ink-dim)">—</span>' : `<span class="days-badge tabular" style="color:${tierColor(tier)}">${days}${days === 1 || days === -1 ? ' day' : ' days'}</span>`}</td>
+        <td><span class="pill ${tier}">${resolved ? (d.status === 'cleared' ? 'Cleared' : 'Discarded') : tierLabel(tier)}</span></td>
+        <td class="action-text">${resolved ? (d.status === 'cleared' ? 'Sold via markdown' : 'Removed as waste') : actionFor(days, d.dateType)}</td>
+        <td>
+          <div class="row-actions">
+            ${resolved ? '' : `<button class="clear" title="Mark cleared / sold" data-act="clear" data-id="${d.id}">✓</button><button class="waste" title="Mark discarded / wasted" data-act="waste" data-id="${d.id}">✕</button>`}
+            <button class="del" title="Delete entry" data-act="del" data-id="${d.id}">🗑</button>
+          </div>
+        </td>
+      </tr>`;
+  }
+  function tierColor(t) {
+    if (t === 'ok') return 'var(--moss)';
+    if (t === 'notice' || t === 'warning') return 'var(--amber)';
+    return 'var(--rust)';
+  }
+  function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  // ---------- data layer ----------
+  function attachDeliveryHandlers() {
+    document.getElementById('rows').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const act = btn.dataset.act;
+      if (act === 'clear') resolveItem(id, 'cleared');
+      else if (act === 'waste') resolveItem(id, 'discarded');
+      else if (act === 'del') deleteItem(id);
+    });
+  }
+
+  function resolveItem(id, status) {
+    const item = deliveries.find(d => d.id === id);
+    if (!item) return;
+    item.status = status;
+    item.resolvedAt = Date.now();
+    saveLocal();
+    render();
+    toast(status === 'cleared' ? 'Marked cleared — nice, that\'s stock saved' : 'Marked as waste');
+  }
+
+  function deleteItem(id) {
+    deliveries = deliveries.filter(d => d.id !== id);
+    saveLocal();
+    render();
+  }
+
+  function addDelivery(data) {
+    deliveries.push(Object.assign({ id: 'd-' + Date.now() }, data));
+    saveLocal();
+    saveCatalogEntry(data.barcode, data.product, data.category);
+    render();
+    return true;
+  }
+
+  function setAlertWindow(n) {
+    alertWindowDays = n;
+    saveAlertWindow(n);
+    render();
+  }
+
+  // ---------- wiring ----------
+  document.getElementById('fDelivered').value = todayStr();
+
+  document.getElementById('openAdd').addEventListener('click', () => {
+    document.getElementById('modalBackdrop').style.display = 'flex';
+    document.getElementById('catalogHint').hidden = true;
+    document.getElementById('fProduct').focus();
+  });
+  document.getElementById('cancelAdd').addEventListener('click', closeModal);
+  document.getElementById('modalBackdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'modalBackdrop') closeModal();
+  });
+  function closeModal() {
+    document.getElementById('modalBackdrop').style.display = 'none';
+    document.getElementById('addForm').reset();
+    document.getElementById('fDelivered').value = todayStr();
+    document.getElementById('catalogHint').hidden = true;
+    stopScan();
+  }
+
+  function applyBarcodeLookup(code) {
+    const hint = document.getElementById('catalogHint');
+    if (!code) { hint.hidden = true; return; }
+    const known = loadCatalog()[code];
+    hint.hidden = false;
+    if (known) {
+      document.getElementById('fProduct').value = known.product;
+      if (known.category) document.getElementById('fCategory').value = known.category;
+      hint.className = 'field-note';
+      hint.textContent = `Known product: ${known.product} — details filled in`;
+    } else {
+      hint.className = 'field-note miss';
+      hint.textContent = 'New barcode — fill in the product details below.';
+    }
+  }
+  document.getElementById('fBarcode').addEventListener('input', (e) => {
+    applyBarcodeLookup(e.target.value.trim());
+  });
+
+  document.getElementById('addForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = {
+      barcode: document.getElementById('fBarcode').value.trim(),
+      product: document.getElementById('fProduct').value.trim(),
+      category: document.getElementById('fCategory').value,
+      qty: Number(document.getElementById('fQty').value) || 1,
+      deliveredDate: document.getElementById('fDelivered').value,
+      expiryDate: document.getElementById('fExpiry').value,
+      dateType: document.querySelector('input[name=dateType]:checked').value,
+      notes: document.getElementById('fNotes').value.trim(),
+      status: 'active',
+      createdAt: Date.now(),
+    };
+    if (!data.product || !data.deliveredDate || !data.expiryDate) return;
+    addDelivery(data);
+    closeModal();
+    toast('Delivery logged');
+  });
+
+  // ---------- barcode camera scanning ----------
+  let scanStream = null;
+  let scanRAF = null;
+
+  function stopScan() {
+    if (scanRAF) cancelAnimationFrame(scanRAF);
+    scanRAF = null;
+    if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+    document.getElementById('scanBackdrop').style.display = 'none';
+  }
+
+  async function startScan() {
+    const statusEl = document.getElementById('scanStatus');
+    const video = document.getElementById('scanVideo');
+    document.getElementById('scanBackdrop').style.display = 'flex';
+    statusEl.textContent = 'Point the camera at the barcode.';
+
+    if (!('BarcodeDetector' in window)) {
+      statusEl.textContent = 'This browser can\'t scan with the camera. Type the barcode instead, or use a USB/Bluetooth scanner gun — it types into the field for you.';
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+    } catch (e) {
+      statusEl.textContent = 'Camera access was blocked or unavailable. Type the barcode instead, or use a USB/Bluetooth scanner gun.';
+      return;
+    }
+    scanStream = stream;
+    video.srcObject = stream;
+
+    let detector;
+    try {
+      detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'] });
+    } catch (e) {
+      statusEl.textContent = 'This browser can\'t scan with the camera. Type the barcode instead.';
+      stopScan();
+      return;
+    }
+
+    const tick = async () => {
+      if (!scanStream) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length) {
+          document.getElementById('fBarcode').value = codes[0].rawValue;
+          applyBarcodeLookup(codes[0].rawValue);
+          stopScan();
+          document.getElementById('fProduct').focus();
+          return;
+        }
+      } catch (e) {}
+      scanRAF = requestAnimationFrame(tick);
+    };
+    scanRAF = requestAnimationFrame(tick);
+  }
+
+  document.getElementById('openScan').addEventListener('click', startScan);
+  document.getElementById('cancelScan').addEventListener('click', stopScan);
+  document.getElementById('scanBackdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'scanBackdrop') stopScan();
+  });
+
+  document.getElementById('alertWindow').addEventListener('change', (e) => {
+    const n = Math.max(1, Math.min(60, Number(e.target.value) || 14));
+    e.target.value = n;
+    setAlertWindow(n);
+  });
+
+  document.getElementById('search').addEventListener('input', (e) => { searchTerm = e.target.value; render(); });
+  document.getElementById('statusSeg').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-v]');
+    if (!btn) return;
+    statusFilter = btn.dataset.v;
+    [...document.getElementById('statusSeg').children].forEach(b => b.classList.toggle('active', b === btn));
+    render();
+  });
+
+  attachDeliveryHandlers();
+
+  // ---------- boot ----------
+  deliveries = loadLocal();
+  alertWindowDays = loadAlertWindow();
+  backfillCatalog();
+  document.getElementById('alertWindow').value = alertWindowDays;
+  render();
+})();
+</script>

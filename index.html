@@ -1410,6 +1410,10 @@
       document.getElementById('appRoot').hidden = true;
       document.getElementById('ownerRoot').hidden = true;
       document.getElementById('authGate').hidden = false;
+      document.getElementById('authForm').reset();
+      document.getElementById('authError').hidden = true;
+      document.getElementById('authSuccess').hidden = true;
+      document.querySelector('.auth-tab[data-mode="signin"]').click();
     }
   });
 })();

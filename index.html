@@ -216,6 +216,13 @@
   .empty-state { text-align: center; padding: 48px 20px; color: var(--ink-dim); }
   .empty-state .big { font-family: 'Fraunces', serif; font-size: 19px; color: var(--ink); margin-bottom: 6px; }
 
+  /* ---------- owner dashboard ---------- */
+  #ownerRows tr { cursor: pointer; }
+  #ownerRows tr:hover td { background: var(--moss-dim); }
+  #ownerRows tr.selected td { background: var(--moss-dim); }
+  .store-name { font-weight: 600; }
+  .drilldown-title { font-size: 18px; margin: 26px 0 12px; }
+
   /* ---------- ideas panel ---------- */
   details.ideas {
     margin-top: 26px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-raised);
@@ -439,6 +446,59 @@
   </details>
 </div>
 
+<div class="wrap" id="ownerRoot" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Shelf Life</h1>
+      <span class="tag">owner view — all stores</span>
+    </div>
+    <div class="top-controls">
+      <span class="sync-pill"><span class="sync-dot"></span>Owner</span>
+      <button class="btn-ghost" id="ownerRefresh">↻ Refresh</button>
+      <button class="btn-ghost" id="ownerLogoutBtn">Log out</button>
+    </div>
+  </header>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Store</th>
+          <th>Active items</th>
+          <th>Needs markdown</th>
+          <th>Critical / expired</th>
+          <th>Cleared vs. wasted (30d)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="ownerRows"></tbody>
+    </table>
+    <div class="empty-state" id="ownerEmpty" style="display:none">
+      <div class="big">No stores yet</div>
+      <div>Once managers create their store logins, they'll show up here.</div>
+    </div>
+  </div>
+
+  <div id="ownerDrilldown" hidden>
+    <h2 id="drilldownTitle" class="drilldown-title"></h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Delivered</th>
+            <th>Days left</th>
+            <th>Status</th>
+            <th>Suggested action</th>
+          </tr>
+        </thead>
+        <tbody id="drilldownRows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modalBackdrop" style="display:none">
   <div class="modal">
     <h2 id="modalTitle">Log a delivery</h2>
@@ -594,19 +654,21 @@
     storeDoc(currentUid).collection('meta').doc('catalog').set({ [barcode]: { product, category } }, { merge: true }).catch(() => {});
   }
 
-  function tierFor(d) {
+  function tierFor(d, win) {
+    if (win == null) win = alertWindowDays;
     if (d < 0) return 'expired';
     if (d <= 3) return 'critical';
     if (d <= 7) return 'warning';
-    if (d <= alertWindowDays) return 'notice';
+    if (d <= win) return 'notice';
     return 'ok';
   }
-  function actionFor(d, dateType) {
+  function actionFor(d, dateType, win) {
+    if (win == null) win = alertWindowDays;
     const safety = dateType === 'use-by';
     if (d < 0) return safety ? 'Use-by passed — pull from shelf now' : 'Best-before passed — check quality before clearance';
     if (d <= 3) return safety ? 'Clearance 50%+ off — sell today' : 'Clearance 50%+ off, or pull if quality has dropped';
     if (d <= 7) return 'Markdown ~30% off, face to front';
-    if (d <= alertWindowDays) return 'Markdown ~15% off, move to front';
+    if (d <= win) return 'Markdown ~15% off, move to front';
     return 'On track';
   }
   function tierLabel(t) {
@@ -1120,21 +1182,160 @@
   });
 
   document.getElementById('logoutBtn').addEventListener('click', () => auth.signOut());
+  document.getElementById('ownerLogoutBtn').addEventListener('click', () => auth.signOut());
+
+  // ---------- owner dashboard: cross-store view for admin accounts ----------
+  let ownerStores = [];
+  let ownerSelectedUid = null;
+
+  async function computeStoreMetrics(storeSnap) {
+    const uid = storeSnap.id;
+    const storeData = storeSnap.data() || {};
+    const sDoc = fs.collection('stores').doc(uid);
+    const [delSnap, settingsSnap] = await Promise.all([
+      sDoc.collection('deliveries').get(),
+      sDoc.collection('meta').doc('settings').get(),
+    ]);
+    const win = (settingsSnap.data() && settingsSnap.data().alertWindowDays) || 14;
+    const items = delSnap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    const active = items.filter(d => d.status === 'active').map(d => Object.assign({}, d, { _days: daysLeft(d) }));
+    active.sort((a, b) => a._days - b._days);
+    const needsMarkdown = active.filter(d => d._days <= win).length;
+    const critical = active.filter(d => d._days <= 3).length;
+    const cutoff = Date.now() - 30 * DAY;
+    const recentResolved = items.filter(d => d.status !== 'active' && (d.resolvedAt || 0) >= cutoff);
+    const cleared = recentResolved.filter(d => d.status === 'cleared').length;
+    const discarded = recentResolved.filter(d => d.status === 'discarded').length;
+    const total = cleared + discarded;
+    const ratio = total === 0 ? null : Math.round((cleared / total) * 100);
+    return { uid, storeId: storeData.storeId || uid, alertWindowDays: win, activeCount: active.length, needsMarkdown, critical, cleared, discarded, ratio, items };
+  }
+
+  function ratioPillClass(ratio) {
+    if (ratio == null) return 'notice';
+    if (ratio >= 70) return 'ok';
+    if (ratio >= 40) return 'warning';
+    return 'critical';
+  }
+
+  function ownerRowHtml(s) {
+    const ratioText = s.ratio == null ? '—' : s.ratio + '%';
+    return `
+      <tr data-uid="${s.uid}" class="${s.uid === ownerSelectedUid ? 'selected' : ''}">
+        <td class="store-name">${escapeHtml(s.storeId)}</td>
+        <td class="tabular">${s.activeCount}</td>
+        <td class="tabular" style="color:${s.needsMarkdown ? 'var(--amber)' : 'var(--ink-dim)'}">${s.needsMarkdown}</td>
+        <td class="tabular" style="color:${s.critical ? 'var(--rust)' : 'var(--ink-dim)'}">${s.critical}</td>
+        <td><span class="pill ${ratioPillClass(s.ratio)}">${ratioText}</span> <span class="action-text">${s.ratio == null ? 'no resolved items' : `${s.cleared} cleared · ${s.discarded} wasted`}</span></td>
+        <td class="action-text">${s.critical > 0 ? 'Needs attention' : (s.ratio != null && s.ratio < 40 ? 'High wastage' : '')}</td>
+      </tr>`;
+  }
+
+  function renderOwnerTable() {
+    const rowsEl = document.getElementById('ownerRows');
+    const emptyEl = document.getElementById('ownerEmpty');
+    if (!ownerStores.length) {
+      rowsEl.innerHTML = '';
+      emptyEl.style.display = '';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    const sorted = ownerStores.slice().sort((a, b) => {
+      const ra = a.ratio == null ? 101 : a.ratio, rb = b.ratio == null ? 101 : b.ratio;
+      if (ra !== rb) return ra - rb;
+      return b.critical - a.critical;
+    });
+    rowsEl.innerHTML = sorted.map(ownerRowHtml).join('');
+  }
+
+  function renderDrilldown() {
+    const wrap = document.getElementById('ownerDrilldown');
+    const store = ownerStores.find(s => s.uid === ownerSelectedUid);
+    if (!store) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    document.getElementById('drilldownTitle').textContent = `${store.storeId} — active items`;
+    const rowsEl = document.getElementById('drilldownRows');
+    if (!store.items.length) {
+      rowsEl.innerHTML = '<tr><td colspan="6" class="action-text">Nothing active right now.</td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = store.items.map(d => {
+      const tier = tierFor(d._days, store.alertWindowDays);
+      const dateTag = d.dateType === 'use-by' ? 'use by' : 'best before';
+      return `
+        <tr>
+          <td class="product-cell">
+            <div class="name">${escapeHtml(d.product)}</div>
+            <div class="meta">${escapeHtml(d.category || '')}${d.barcode ? ' · ' + escapeHtml(d.barcode) : ''}</div>
+          </td>
+          <td class="tabular">${d.qty}</td>
+          <td class="mono">${d.deliveredDate}<span class="datetag">${dateTag}</span></td>
+          <td><span class="days-badge tabular" style="color:${tierColor(tier)}">${d._days}${d._days === 1 || d._days === -1 ? ' day' : ' days'}</span></td>
+          <td><span class="pill ${tier}">${tierLabel(tier)}</span></td>
+          <td class="action-text">${actionFor(d._days, d.dateType, store.alertWindowDays)}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  async function loadOwnerStores() {
+    const refreshBtn = document.getElementById('ownerRefresh');
+    const original = refreshBtn.textContent;
+    refreshBtn.textContent = 'Loading…';
+    refreshBtn.disabled = true;
+    try {
+      const storesSnap = await fs.collection('stores').get();
+      ownerStores = await Promise.all(storesSnap.docs.map(computeStoreMetrics));
+      renderOwnerTable();
+      renderDrilldown();
+    } catch (e) {
+      toast('Could not load stores — check your connection');
+    } finally {
+      refreshBtn.textContent = original;
+      refreshBtn.disabled = false;
+    }
+  }
+
+  document.getElementById('ownerRefresh').addEventListener('click', loadOwnerStores);
+  document.getElementById('ownerRows').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-uid]');
+    if (!tr) return;
+    ownerSelectedUid = tr.dataset.uid === ownerSelectedUid ? null : tr.dataset.uid;
+    renderOwnerTable();
+    renderDrilldown();
+  });
 
   // ---------- boot ----------
-  auth.onAuthStateChanged((user) => {
+  auth.onAuthStateChanged(async (user) => {
     if (user) {
+      let isAdmin = false;
+      try {
+        const adminSnap = await fs.collection('admins').doc(user.uid).get();
+        isAdmin = adminSnap.exists;
+      } catch (e) {}
+
       document.getElementById('authGate').hidden = true;
-      document.getElementById('appRoot').hidden = false;
-      startListening(user.uid);
-      storeDoc(user.uid).get().then((snap) => {
-        const data = snap.data();
-        document.getElementById('storeLabel').textContent = (data && data.storeId) || 'Store';
-      });
-      render();
+
+      if (isAdmin) {
+        document.getElementById('appRoot').hidden = true;
+        document.getElementById('ownerRoot').hidden = false;
+        ownerSelectedUid = null;
+        loadOwnerStores();
+      } else {
+        document.getElementById('ownerRoot').hidden = true;
+        document.getElementById('appRoot').hidden = false;
+        startListening(user.uid);
+        storeDoc(user.uid).get().then((snap) => {
+          const data = snap.data();
+          document.getElementById('storeLabel').textContent = (data && data.storeId) || 'Store';
+        });
+        render();
+      }
     } else {
       stopListening();
+      ownerStores = [];
+      ownerSelectedUid = null;
       document.getElementById('appRoot').hidden = true;
+      document.getElementById('ownerRoot').hidden = true;
       document.getElementById('authGate').hidden = false;
     }
   });

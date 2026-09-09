@@ -236,6 +236,11 @@
   .idea-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 14px; }
   .idea { font-size: 13px; color: var(--ink-dim); }
   .idea .t { color: var(--ink); font-weight: 600; display: block; margin-bottom: 3px; }
+  .catalog-import { margin-top: 12px; }
+  .import-copy { font-size: 13px; color: var(--ink-dim); margin: 0 0 12px; max-width: 620px; }
+  .import-status { margin-top: 10px; font-size: 13px; color: var(--ink-dim); }
+  .import-status.err { color: var(--rust); }
+  .import-status.ok { color: var(--moss-ink); }
 
   /* ---------- modal ---------- */
   .modal-backdrop {
@@ -474,6 +479,16 @@
       <div class="idea"><span class="t">Review the 30-day ratio weekly</span>A falling "cleared vs. wasted" ratio usually means a delivery is arriving with too little shelf life left — worth a note back to that supplier.</div>
     </div>
   </details>
+
+  <details class="ideas">
+    <summary>Product catalog — bulk import</summary>
+    <div class="catalog-import">
+      <p class="import-copy">Upload a spreadsheet with a barcode column and a product-name column (a POS sales-history export works fine) to bulk-fill the catalog, so scanning any of those barcodes auto-fills the product from now on. Existing entries with the same barcode get overwritten.</p>
+      <input type="file" id="catalogFile" accept=".xlsx,.xls,.csv" hidden />
+      <button type="button" class="btn-ghost" id="catalogImportBtn">⬆ Choose file to import</button>
+      <div class="import-status" id="importStatus" hidden></div>
+    </div>
+  </details>
 </div>
 
 <div class="wrap" id="ownerRoot" hidden>
@@ -640,8 +655,7 @@
   fs.enablePersistence({ synchronizeTabs: true }).catch(() => {});
 
   let currentUid = null;
-  let catalogCache = {};
-  let unsubDeliveries = null, unsubCatalog = null, unsubSettings = null;
+  let unsubDeliveries = null, unsubSettings = null;
 
   function storeDoc(uid) { return fs.collection('stores').doc(uid); }
   function synthEmail(storeId) {
@@ -677,9 +691,6 @@
       deliveries = snap.docs.map(doc => Object.assign({ id: doc.id }, doc.data()));
       render();
     }, () => toast('Sync error — check your connection'));
-    unsubCatalog = sDoc.collection('meta').doc('catalog').onSnapshot((snap) => {
-      catalogCache = snap.data() || {};
-    });
     unsubSettings = sDoc.collection('meta').doc('settings').onSnapshot((snap) => {
       const data = snap.data();
       if (data && data.alertWindowDays) {
@@ -691,19 +702,25 @@
   }
   function stopListening() {
     if (unsubDeliveries) unsubDeliveries();
-    if (unsubCatalog) unsubCatalog();
     if (unsubSettings) unsubSettings();
-    unsubDeliveries = unsubCatalog = unsubSettings = null;
+    unsubDeliveries = unsubSettings = null;
     deliveries = [];
-    catalogCache = {};
     currentUid = null;
   }
 
-  // ---------- product catalog: barcode -> {product, category}, learned as you go ----------
-  function loadCatalog() { return catalogCache; }
+  // ---------- product catalog: barcode -> {product, category}, one doc per barcode ----------
+  // (looked up on demand rather than synced whole, since a store's catalog can run into
+  // the thousands of products — syncing all of it to every device on every load doesn't scale)
+  async function lookupCatalogEntry(barcode) {
+    if (!barcode || !currentUid) return null;
+    try {
+      const snap = await storeDoc(currentUid).collection('catalog').doc(barcode).get();
+      return snap.exists ? snap.data() : null;
+    } catch (e) { return null; }
+  }
   function saveCatalogEntry(barcode, product, category) {
     if (!barcode || !currentUid) return;
-    storeDoc(currentUid).collection('meta').doc('catalog').set({ [barcode]: { product, category } }, { merge: true }).catch(() => {});
+    storeDoc(currentUid).collection('catalog').doc(barcode).set({ product, category }).catch(() => {});
   }
 
   function tierFor(d, win) {
@@ -928,13 +945,18 @@
     document.getElementById('fProduct').focus();
   }
 
-  function applyBarcodeLookup(code) {
+  let barcodeLookupSeq = 0;
+  async function applyBarcodeLookup(code) {
     const hint = document.getElementById('catalogHint');
     if (!code) { hint.hidden = true; return; }
-    const known = loadCatalog()[code];
+    const mySeq = ++barcodeLookupSeq;
     hint.hidden = false;
+    hint.className = 'field-note miss';
+    hint.textContent = 'Looking up…';
+    const known = await lookupCatalogEntry(code);
+    if (mySeq !== barcodeLookupSeq) return; // a newer lookup superseded this one
     if (known) {
-      document.getElementById('fProduct').value = known.product;
+      if (!document.getElementById('fProduct').value.trim()) document.getElementById('fProduct').value = known.product;
       if (known.category) document.getElementById('fCategory').value = known.category;
       hint.className = 'field-note';
       hint.textContent = `Known product: ${known.product} — details filled in`;
@@ -943,8 +965,12 @@
       hint.textContent = 'New barcode — fill in the product details below.';
     }
   }
+  let barcodeLookupTimer = null;
   document.getElementById('fBarcode').addEventListener('input', (e) => {
-    applyBarcodeLookup(e.target.value.trim());
+    const code = e.target.value.trim();
+    clearTimeout(barcodeLookupTimer);
+    if (!code) { document.getElementById('catalogHint').hidden = true; return; }
+    barcodeLookupTimer = setTimeout(() => applyBarcodeLookup(code), 350);
   });
 
   document.getElementById('addForm').addEventListener('submit', (e) => {
@@ -1157,6 +1183,78 @@
     }
   }
   document.getElementById('exportBtn').addEventListener('click', exportToExcel);
+
+  // ---------- catalog import: bulk-load barcode -> product name from a spreadsheet ----------
+  document.getElementById('catalogImportBtn').addEventListener('click', () => {
+    document.getElementById('catalogFile').click();
+  });
+
+  function extractCatalogRows(rows) {
+    // Generic on purpose: works for a clean two-column CSV as well as a padded
+    // POS report — for each row, the first digit-only cell (6-14 digits) is the
+    // barcode, and the first other non-empty cell is the product name.
+    const out = [];
+    for (const row of rows) {
+      let barcode = null, desc = null;
+      for (const cell of row) {
+        const s = String(cell == null ? '' : cell).trim();
+        if (!s) continue;
+        if (!barcode && /^\d{6,14}$/.test(s)) { barcode = s; continue; }
+        if (!desc && !/^\d{6,14}$/.test(s)) desc = s.replace(/\s+/g, ' ');
+      }
+      if (barcode && desc) out.push({ barcode, product: desc });
+    }
+    return out;
+  }
+
+  async function importCatalogFile(file) {
+    const btn = document.getElementById('catalogImportBtn');
+    const statusEl = document.getElementById('importStatus');
+    const original = btn.textContent;
+    btn.disabled = true;
+    statusEl.hidden = false;
+    statusEl.className = 'import-status';
+    statusEl.textContent = 'Reading file…';
+    try {
+      await loadXlsx();
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const entries = extractCatalogRows(rows);
+      if (!entries.length) {
+        statusEl.className = 'import-status err';
+        statusEl.textContent = 'Couldn\'t find any barcode + product name pairs in that file.';
+        return;
+      }
+      statusEl.textContent = `Found ${entries.length} products. Importing…`;
+      let done = 0;
+      for (let i = 0; i < entries.length; i += 400) {
+        const chunk = entries.slice(i, i + 400);
+        const batch = fs.batch();
+        chunk.forEach(({ barcode, product }) => {
+          batch.set(storeDoc(currentUid).collection('catalog').doc(barcode), { product, category: '' });
+        });
+        await batch.commit();
+        done += chunk.length;
+        statusEl.textContent = `Importing… ${done}/${entries.length}`;
+      }
+      statusEl.className = 'import-status ok';
+      statusEl.textContent = `Imported ${entries.length} products into the catalog.`;
+    } catch (e) {
+      statusEl.className = 'import-status err';
+      statusEl.textContent = 'Import failed — check your connection and try again.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
+  document.getElementById('catalogFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) importCatalogFile(file);
+  });
 
   // ---------- auth: sign in / create store / log out ----------
   let authMode = 'signin';
